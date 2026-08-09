@@ -15,6 +15,7 @@
 每个发送函数都支持分批发送，并通过参数化配置实现与 CONFIG 的解耦。
 """
 
+import os
 import smtplib
 import time
 import json
@@ -418,23 +419,65 @@ def send_to_wework(
         report_type=report_type,
     )
 
-    # 统一添加批次头部（已预留空间，不会超限）
+        # 统一添加批次头部（已预留空间，不会超限）
     batches = add_batch_headers(batches, header_format_type, batch_size)
 
     print(f"{log_prefix}消息分为 {len(batches)} 批次发送 [{report_type}]")
 
+    # ===== 获取报告网址（用于图文卡片） =====
+    # ⚠️ 重要：import os 应该放在文件顶部，不要放在这里
+    # 但为了确保兼容，这里也做一次检查
+    try:
+        import os
+        report_url = os.environ.get("REPORT_URL", "")
+    except ImportError:
+        report_url = ""
+
     # 逐批发送
     for i, batch_content in enumerate(batches, 1):
-        # 根据消息类型构建 payload
-        if is_text_mode:
-            # text 格式：去除 markdown 语法
-            plain_content = strip_markdown(batch_content)
-            payload = {"msgtype": "text", "text": {"content": plain_content}}
-            content_size = len(plain_content.encode("utf-8"))
+        # 如果配置了 REPORT_URL 且当前是 markdown 模式，发送图文卡片
+        if report_url and not is_text_mode:
+            # 从内容中提取前几行作为卡片描述
+            lines = batch_content.strip().split('\n')
+            desc_lines = []
+            for line in lines:
+                if not line.strip():
+                    continue
+                # 去除 Markdown 符号，让描述更干净
+                clean_line = line.replace('**', '').replace('##', '').replace('*', '').strip()
+                desc_lines.append(clean_line)
+                if len(desc_lines) >= 3:
+                    break
+            description = "\n".join(desc_lines) if desc_lines else "点击查看完整报告"
+            if len(description) > 500:
+                description = description[:500] + "..."
+
+            # 构造图文卡片
+            payload = {
+                "msgtype": "news",
+                "news": {
+                    "articles": [
+                        {
+                            "title": "📊 热点新闻报告（点击查看完整榜单）",
+                            "description": description,
+                            "url": report_url,
+                            "picurl": "https://cdn.jsdelivr.net/gh/sansan0/TrendRadar/docs/logo.png"
+                        }
+                    ]
+                }
+            }
+            content_size = len(str(payload).encode("utf-8"))
         else:
-            # markdown 格式：保持原样
-            payload = {"msgtype": "markdown", "markdown": {"content": batch_content}}
-            content_size = len(batch_content.encode("utf-8"))
+            # 原有逻辑：text 或 markdown 格式
+            if is_text_mode:
+                # text 格式：去除 markdown 语法
+                plain_content = strip_markdown(batch_content)
+                payload = {"msgtype": "text", "text": {"content": plain_content}}
+                content_size = len(plain_content.encode("utf-8"))
+            else:
+                # markdown 格式：保持原样
+                payload = {"msgtype": "markdown", "markdown": {"content": batch_content}}
+                content_size = len(batch_content.encode("utf-8"))
 
         print(
             f"发送{log_prefix}第 {i}/{len(batches)} 批次，大小：{content_size} 字节 [{report_type}]"
@@ -468,7 +511,6 @@ def send_to_wework(
     print(f"{log_prefix}所有 {len(batches)} 批次发送完成 [{report_type}]")
 
     return True
-
 
 def send_to_telegram(
     bot_token: str,
