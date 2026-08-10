@@ -44,7 +44,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -214,3 +214,13 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy cloudflare_dist --project-name=${{ secrets.CLOUDFLARE_PROJECT_NAME }}
+      # --------------------------------------------------------------------------------
+      # 🚀 DEPLOY TO GITHUB PAGES / 部署到 GitHub Pages
+      # --------------------------------------------------------------------------------
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .               # 因为 index.html 在根目录
+          publish_branch: gh-pages     # 默认就是 gh-pages，可不写
+          commit_message: "自动部署：$(date)"
